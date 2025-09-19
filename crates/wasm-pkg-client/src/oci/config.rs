@@ -49,12 +49,15 @@ impl TryFrom<&RegistryConfig> for OciRegistryConfig {
     type Error = Error;
 
     fn try_from(registry_config: &RegistryConfig) -> Result<Self, Self::Error> {
-        let OciRegistryConfigToml { auth, protocol } =
+        let OciRegistryConfigToml { auth, protocol, accept_invalid_certificates } =
             registry_config.backend_config("oci")?.unwrap_or_default();
         let mut client_config = ClientConfig::default();
         if let Some(protocol) = protocol {
             client_config.protocol = oci_client_protocol(&protocol)?;
-        };
+        }
+        if let Some(accept_invalid_certificates) = accept_invalid_certificates {
+            client_config.accept_invalid_certificates = accept_invalid_certificates;
+        }
         let credentials = auth
             .map(TryInto::try_into)
             .transpose()
@@ -70,6 +73,7 @@ impl TryFrom<&RegistryConfig> for OciRegistryConfig {
 struct OciRegistryConfigToml {
     auth: Option<TomlAuth>,
     protocol: Option<String>,
+    accept_invalid_certificates: Option<bool>,
 }
 
 impl From<OciRegistryConfig> for OciRegistryConfigToml {
@@ -80,6 +84,7 @@ impl From<OciRegistryConfig> for OciRegistryConfigToml {
                 password: c.password,
             }),
             protocol: Some(oci_protocol_string(&value.client_config.protocol)),
+            accept_invalid_certificates: Some(value.client_config.accept_invalid_certificates)
         }
     }
 }
@@ -176,6 +181,7 @@ mod tests {
             [registry."example.com".oci]
             auth = { username = "open", password = "sesame" }
             protocol = "http"
+            accept_invalid_certificates = true
 
             [registry."wasi.dev"]
             type = "oci"
@@ -196,6 +202,7 @@ mod tests {
             oci_client::client::ClientProtocol::Http,
             oci_config.client_config.protocol
         );
+        assert_eq!(oci_config.client_config.accept_invalid_certificates, true);
 
         let oci_config: OciRegistryConfig = cfg
             .registry_config(&"wasi.dev".parse().unwrap())
